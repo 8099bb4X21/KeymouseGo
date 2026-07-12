@@ -13,6 +13,13 @@ jobs:
       image: debian:10-slim
 
     steps:
+      - name: 切换为归档源（Debian 10 已 EOL）
+        run: |
+          sed -i 's/deb\.debian\.org/archive.debian.org/g' /etc/apt/sources.list
+          sed -i 's|security.debian.org|archive.debian.org/debian-security|g' /etc/apt/sources.list
+          sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+          # buster-updates 在归档源中无独立目录，注释掉
+          sed -i '/buster-updates/s/^/# /' /etc/apt/sources.list
       - name: 安装基础工具
         run: |
           apt-get update
