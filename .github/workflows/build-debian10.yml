@@ -52,11 +52,17 @@ jobs:
               /opt/conda/envs/build/bin/pip install qt-material==2.11 --no-deps
               /opt/conda/envs/build/bin/pip install pyinstaller
 
+              # 设定 LD_LIBRARY_PATH 确保 PyInstaller 能找到 Qt6 共享库
+              LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH \
               /opt/conda/envs/build/bin/pyinstaller -F -w \
                 --add-data './assets:assets' \
+                --collect-all PySide6 \
+                --collect-all shiboken6 \
+                --hidden-import 'PySide6.QtMultimedia' \
                 --hidden-import 'pynput.keyboard._xorg' \
                 --hidden-import 'pynput.mouse._xorg' \
                 KeymouseGo.py
+              ls -lh dist/
             "
 
       - name: 上传构建产物
