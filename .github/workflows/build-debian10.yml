@@ -44,6 +44,8 @@ jobs:
               /opt/conda/bin/conda create -n build python=3.11 -y
 
               /opt/conda/envs/build/bin/pip install --upgrade pip
+              # PySide6 6.5.3 无 ARM64 wheel，升级到 ≥ 6.6
+              sed -i 's/PySide6==6.5.3/PySide6>=6.6.0/' requirements-universal.txt
               /opt/conda/envs/build/bin/pip install -r requirements-universal.txt
               /opt/conda/envs/build/bin/pip install pyinstaller
 
