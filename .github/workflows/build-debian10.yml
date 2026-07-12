@@ -44,9 +44,12 @@ jobs:
               /opt/conda/bin/conda create -n build python=3.11 -y
 
               /opt/conda/envs/build/bin/pip install --upgrade pip
-              # PySide6 6.5.3 无 ARM64 wheel，升级到 ≥ 6.6
-              sed -i 's/PySide6==6.5.3/PySide6>=6.6.0/' requirements-universal.txt
+              # PySide6 在 PyPI 无 ARM64 wheel，从 conda-forge 安装
+              sed -i '/PySide6/d' requirements-universal.txt
               /opt/conda/envs/build/bin/pip install -r requirements-universal.txt
+              /opt/conda/bin/conda install -n build -c conda-forge pyside6 -y
+              # qt-material 依赖 PySide6，已由 conda 提供，跳过依赖检查
+              /opt/conda/envs/build/bin/pip install qt-material==2.11 --no-deps
               /opt/conda/envs/build/bin/pip install pyinstaller
 
               /opt/conda/envs/build/bin/pyinstaller -F -w \
