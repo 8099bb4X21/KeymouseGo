@@ -1,4 +1,4 @@
-name: 构建 Debian 10 / UOS 20 包
+name: 构建 UOS 20 ARM64 包
 
 on:
   workflow_dispatch:
@@ -9,54 +9,53 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: debian:10-slim
 
     steps:
-      - name: 切换为归档源（Debian 10 已 EOL）
-        run: |
-          sed -i 's/deb\.debian\.org/archive.debian.org/g' /etc/apt/sources.list
-          sed -i 's|security.debian.org|archive.debian.org/debian-security|g' /etc/apt/sources.list
-          sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
-          # buster-updates 在归档源中无独立目录，注释掉
-          sed -i '/buster-updates/s/^/# /' /etc/apt/sources.list
-      - name: 安装基础工具
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends git wget ca-certificates linux-libc-dev build-essential
       - uses: actions/checkout@v4
 
-      - name: 安装 Miniconda（提供 Python 3.11）
-        run: |
-          wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
-          bash /tmp/miniconda.sh -b -p /opt/conda
-          /opt/conda/bin/conda create -n build python=3.11 -y
+      - name: 启用 QEMU（ARM64 模拟）
+        uses: docker/setup-qemu-action@v3
 
-      - name: 安装系统依赖（PySide6 运行时所需）
+      - name: 在 ARM64 Debian 10 容器内编译
         run: |
-          apt-get install -y --no-install-recommends \
-            libegl1 \
-            libgl1 \
-            libxkbcommon0 \
-            libdbus-1-3 \
-            libfontconfig1
+          docker run --rm \
+            --platform linux/arm64/v8 \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            debian:10-slim \
+            bash -c "
+              set -e
 
-      - name: 安装 Python 依赖
-        run: |
-          /opt/conda/envs/build/bin/pip install --upgrade pip
-          /opt/conda/envs/build/bin/pip install -r requirements-universal.txt
-          /opt/conda/envs/build/bin/pip install pyinstaller
+              # 切换为归档源（Debian 10 已 EOL）
+              sed -i 's/deb\.debian\.org/archive.debian.org/g' /etc/apt/sources.list
+              sed -i 's|security.debian.org|archive.debian.org/debian-security|g' /etc/apt/sources.list
+              sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list 2>/dev/null || true
+              sed -i '/buster-updates/s/^/# /' /etc/apt/sources.list
 
-      - name: 打包可执行文件
-        run: |
-          /opt/conda/envs/build/bin/pyinstaller -F -w \
-            --add-data './assets:assets' \
-            --hidden-import "pynput.keyboard._xorg" \
-            --hidden-import "pynput.mouse._xorg" \
-            KeymouseGo.py
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                git wget ca-certificates \
+                linux-libc-dev build-essential \
+                libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
+
+              # Miniconda ARM64 (aarch64)
+              wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh -O /tmp/miniconda.sh
+              bash /tmp/miniconda.sh -b -p /opt/conda
+              /opt/conda/bin/conda create -n build python=3.11 -y
+
+              /opt/conda/envs/build/bin/pip install --upgrade pip
+              /opt/conda/envs/build/bin/pip install -r requirements-universal.txt
+              /opt/conda/envs/build/bin/pip install pyinstaller
+
+              /opt/conda/envs/build/bin/pyinstaller -F -w \
+                --add-data './assets:assets' \
+                --hidden-import 'pynput.keyboard._xorg' \
+                --hidden-import 'pynput.mouse._xorg' \
+                KeymouseGo.py
+            "
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: KeymouseGo-debian10
+          name: KeymouseGo-UOS-ARM64
           path: dist/KeymouseGo
