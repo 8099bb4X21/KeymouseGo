@@ -52,10 +52,18 @@ jobs:
               /opt/conda/envs/build/bin/pip install qt-material==2.11 --no-deps
               /opt/conda/envs/build/bin/pip install pyinstaller
 
-              # PyInstaller：只打包源码实际用到的子模块，排除 QtWebEngine 等巨无霸
-              LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH \
+              # 收集 Qt6 共享库到本地目录（强制打包，绕过 QEMU 下 ldd 解析失效）
+              mkdir -p /workspace/qt6libs
+              for f in /opt/conda/envs/build/lib/libQt6*.so*; do
+                [ -f "$f" ] && cp -L "$f" /workspace/qt6libs/
+              done
+              echo "=== 共收集 $(ls /workspace/qt6libs/ | wc -l) 个 Qt6 .so 文件 ==="
+              ls -lh /workspace/qt6libs/
+
+              export LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH
               /opt/conda/envs/build/bin/pyinstaller -F -w \
                 --add-data './assets:assets' \
+                --add-binary '/workspace/qt6libs:.' \
                 --hidden-import 'PySide6.QtCore' \
                 --hidden-import 'PySide6.QtGui' \
                 --hidden-import 'PySide6.QtWidgets' \
