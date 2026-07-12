@@ -23,7 +23,7 @@ jobs:
       - name: 安装基础工具
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git wget ca-certificates
+          apt-get install -y --no-install-recommends git wget ca-certificates linux-libc-dev
       - uses: actions/checkout@v4
 
       - name: 安装 Miniconda（提供 Python 3.11）
