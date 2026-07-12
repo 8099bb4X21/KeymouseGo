@@ -46,9 +46,29 @@ jobs:
               /opt/conda/envs/build/bin/pip install qt-material==2.11 --no-deps
               /opt/conda/envs/build/bin/pip install pyinstaller
 
-              # 原生 ARM64 下 ldd 正常工作，PyInstaller 可自动解析 Qt6 依赖
               export LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH
-              /opt/conda/envs/build/bin/pyinstaller -F -w \
+
+              echo "=== 诊断: Qt6 库文件 ==="
+              ls -lh /opt/conda/envs/build/lib/libQt6* 2>/dev/null
+
+              echo "=== 诊断: PySide6 模块目录 ==="
+              ls -lh /opt/conda/envs/build/lib/python3.11/site-packages/PySide6/ 2>/dev/null
+
+              echo "=== 诊断: ldd 检查 QtMultimedia 模块 ==="
+              MM_FILE=$(find /opt/conda/envs/build -name "QtMultimedia*.so" -type f 2>/dev/null | head -3)
+              if [ -n "$MM_FILE" ]; then
+                echo "找到: $MM_FILE"
+                ldd "$MM_FILE" 2>/dev/null | grep -E "(Qt6|not found)"
+              else
+                echo "未找到 QtMultimedia*.so"
+                find /opt/conda/envs/build -name "*Multimedia*" -type f 2>/dev/null | head -10
+              fi
+
+              echo "=== 诊断: 测试导入 QtMultimedia ==="
+              /opt/conda/envs/build/bin/python3 -c "from PySide6 import QtMultimedia; print('导入成功'); g=dir(QtMultimedia); print([x for x in g if 'Sound' in x])" || echo "导入失败"
+
+              # 用 --onedir 模式构建并保留完整目录，便于排查
+              /opt/conda/envs/build/bin/pyinstaller -w \
                 --add-data "./assets:assets" \
                 --hidden-import "PySide6" \
                 --hidden-import "PySide6.QtCore" \
@@ -60,7 +80,10 @@ jobs:
                 --hidden-import "pynput.mouse._xorg" \
                 --hidden-import "pynput.mouse._uinput" \
                 KeymouseGo.py
-              ls -lh dist/
+
+              echo "=== 诊断: dist/KeymouseGo 目录内容 ==="
+              ls -lh dist/KeymouseGo/
+              find dist/KeymouseGo/ -name "*.so*" -o -name "libQt6*" 2>/dev/null
             '
 
       - name: 上传构建产物
