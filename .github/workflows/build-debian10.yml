@@ -55,12 +55,12 @@ jobs:
               # 收集 Qt6 共享库到本地目录（强制打包，绕过 QEMU 下 ldd 解析失效）
               mkdir -p /workspace/qt6libs
               for f in /opt/conda/envs/build/lib/libQt6*.so*; do
-                [ -f "$f" ] && cp -L "$f" /workspace/qt6libs/
+                [ -f \"\$f\" ] && cp -L \"\$f\" /workspace/qt6libs/
               done
-              echo "=== 共收集 $(ls /workspace/qt6libs/ | wc -l) 个 Qt6 .so 文件 ==="
+              echo \"=== 共收集 \$(ls /workspace/qt6libs/ | wc -l) 个 Qt6 .so 文件 ===\"
               ls -lh /workspace/qt6libs/
 
-              export LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH
+              export LD_LIBRARY_PATH=/opt/conda/envs/build/lib:\$LD_LIBRARY_PATH
               /opt/conda/envs/build/bin/pyinstaller -F -w \
                 --add-data './assets:assets' \
                 --add-binary '/workspace/qt6libs:.' \
