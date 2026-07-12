@@ -52,15 +52,30 @@ jobs:
               /opt/conda/envs/build/bin/pip install qt-material==2.11 --no-deps
               /opt/conda/envs/build/bin/pip install pyinstaller
 
-              # 设定 LD_LIBRARY_PATH 确保 PyInstaller 能找到 Qt6 共享库
+              # PyInstaller：只打包源码实际用到的子模块，排除 QtWebEngine 等巨无霸
               LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH \
               /opt/conda/envs/build/bin/pyinstaller -F -w \
                 --add-data './assets:assets' \
-                --collect-all PySide6 \
-                --collect-all shiboken6 \
+                --hidden-import 'PySide6.QtCore' \
+                --hidden-import 'PySide6.QtGui' \
+                --hidden-import 'PySide6.QtWidgets' \
                 --hidden-import 'PySide6.QtMultimedia' \
                 --hidden-import 'pynput.keyboard._xorg' \
+                --hidden-import 'pynput.keyboard._uinput' \
                 --hidden-import 'pynput.mouse._xorg' \
+                --hidden-import 'pynput.mouse._uinput' \
+                --exclude-module 'PySide6.QtWebEngine' \
+                --exclude-module 'PySide6.QtWebEngineCore' \
+                --exclude-module 'PySide6.QtWebEngineQuick' \
+                --exclude-module 'PySide6.QtWebEngineWidgets' \
+                --exclude-module 'PySide6.QtHelp' \
+                --exclude-module 'PySide6.QtQuick' \
+                --exclude-module 'PySide6.QtQuickControls2' \
+                --exclude-module 'PySide6.QtTest' \
+                --exclude-module 'PySide6.QtStateMachine' \
+                --exclude-module 'PySide6.QtPrintSupport' \
+                --exclude-module 'PySide6.QtDataVisualization' \
+                --exclude-module 'PySide6.QtMultimediaWidgets' \
                 KeymouseGo.py
               ls -lh dist/
             "
