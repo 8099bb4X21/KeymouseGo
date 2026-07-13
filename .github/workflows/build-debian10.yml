@@ -48,26 +48,7 @@ jobs:
 
               export LD_LIBRARY_PATH=/opt/conda/envs/build/lib:$LD_LIBRARY_PATH
 
-              echo "=== 诊断: Qt6 库文件 ==="
-              ls -lh /opt/conda/envs/build/lib/libQt6* 2>/dev/null
-
-              echo "=== 诊断: PySide6 模块目录 ==="
-              ls -lh /opt/conda/envs/build/lib/python3.11/site-packages/PySide6/ 2>/dev/null
-
-              echo "=== 诊断: ldd 检查 QtMultimedia 模块 ==="
-              MM_FILE=$(find /opt/conda/envs/build -name "QtMultimedia*.so" -type f 2>/dev/null | head -3)
-              if [ -n "$MM_FILE" ]; then
-                echo "找到: $MM_FILE"
-                ldd "$MM_FILE" 2>/dev/null | grep -E "(Qt6|not found)"
-              else
-                echo "未找到 QtMultimedia*.so"
-                find /opt/conda/envs/build -name "*Multimedia*" -type f 2>/dev/null | head -10
-              fi
-
-              echo "=== 诊断: 测试导入 QtMultimedia ==="
-              /opt/conda/envs/build/bin/python3 -c "from PySide6 import QtMultimedia; print('导入成功'); g=dir(QtMultimedia); print([x for x in g if 'Sound' in x])" || echo "导入失败"
-
-              # 用 --onedir 模式构建并保留完整目录，便于排查
+              echo "=== 构建可执行文件 ==="
               /opt/conda/envs/build/bin/pyinstaller -w \
                 --add-data "./assets:assets" \
                 --hidden-import "PySide6" \
@@ -81,9 +62,18 @@ jobs:
                 --hidden-import "pynput.mouse._uinput" \
                 KeymouseGo.py
 
-              echo "=== 诊断: dist/KeymouseGo 目录内容 ==="
-              ls -lh dist/KeymouseGo/
-              find dist/KeymouseGo/ -name "*.so*" -o -name "libQt6*" 2>/dev/null
+              # PySide6 Python 扩展不直接链接 Qt6 库（运行时动态加载），
+              # 必须手动将所有 Qt6 .so 注入 _internal 目录（PyInstaller 的 LD_LIBRARY_PATH 指向此目录）
+              echo "=== 将 Qt6 共享库注入 dist 目录 ==="
+              PYDIST=/workspace/dist/KeymouseGo
+              PYLIBDIR="$PYDIST/_internal"
+              mkdir -p "$PYLIBDIR"
+              cp -aL /opt/conda/envs/build/lib/libQt6*.so* "$PYLIBDIR/" 2>/dev/null
+              echo "Qt6 .so 文件数: $(ls "$PYLIBDIR"/libQt6* 2>/dev/null | wc -l)"
+              ls -lh "$PYLIBDIR"/libQt6* 2>/dev/null
+
+              echo "=== 最终目录大小 ==="
+              du -sh "$PYDIST"
             '
 
       - name: 上传构建产物
