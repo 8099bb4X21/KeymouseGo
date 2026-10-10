@@ -16,6 +16,7 @@ import re
 import struct
 import subprocess
 import threading
+import time
 
 import Recorder.globals as globalv
 from loguru import logger
@@ -98,14 +99,25 @@ _MEMBER_RE = re.compile(r"member=([A-Za-z]+)")
 
 
 def _mouse_monitor_thread():
-    rule = "interface='%s'" % XEM_INTERFACE
+    rule = "interface='{}'".format(XEM_INTERFACE)
     try:
         proc = subprocess.Popen(
             ["dbus-monitor", "--session", rule],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except (OSError, ValueError) as e:
         logger.error("启动 dbus-monitor 监听 XEventMonitor 失败: {}", e)
         return
+
+    # 启动后检查进程是否存活：连不上 session bus 会立刻退出，以前是静默死
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        try:
+            err = proc.stderr.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            err = ""
+        logger.error("dbus-monitor 启动后即退出 rc={} err={}", proc.returncode, err)
+        return
+    logger.info("dbus-monitor 进程存活，开始监听 XEventMonitor 信号")
 
     header = None
     args = []
@@ -131,6 +143,7 @@ def _handle_mouse_block(header, args):
     if not m:
         return
     member = m.group(1)
+    logger.debug("收到 XEventMonitor 信号 {} 参数 {}", member, args)
     ints = []
     for line in args:
         if line.startswith("int32 "):
