@@ -63,3 +63,6 @@ scripts/
 plugins/
 logs/
 !assets/
+
+# 本地测试脚本(内网探测等), 不入库
+test/

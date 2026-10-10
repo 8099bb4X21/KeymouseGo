@@ -1,10 +1,14 @@
 from platform import system
 from PySide6.QtCore import Slot
 import Recorder.globals
+from Event import is_deepin_wayland
 
 if system() == 'Windows':
     import Recorder.WindowsRecorder as _Recorder
     _Recorder.globalv.key_combination_trigger = ['lwin', 'lshift', 'rshift', 'lcontrol', 'rcontrol', 'lmenu', 'rmenu']
+elif is_deepin_wayland():
+    import Recorder.DeepinRecorder as _Recorder
+    _Recorder.globalv.key_combination_trigger = ['win', 'shiftright', 'shift', 'ctrlright', 'ctrl', 'altright', 'alt']
 elif system() in ['Linux', 'Darwin']:
     import Recorder.UniversalRecorder as _Recorder
     _Recorder.globalv.key_combination_trigger = ['win', 'shiftright', 'shift', 'ctrlright', 'ctrl', 'altright', 'alt']

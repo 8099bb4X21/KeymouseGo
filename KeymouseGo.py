@@ -33,7 +33,34 @@ def resize_layout(ui, ratio_w, ratio_h):
             q_widget.setStyleSheet('padding-left: 7px')
 
 
+def ensure_deepin_session_bus():
+    """deepin Wayland 且 root 运行时, 恢复登录用户的 D-Bus session bus 地址。
+
+    回放鼠标/键盘走 uinput(需 root), 而录制走 XEventMonitor、键盘 WlSimulateKey
+    走用户 session bus, 两者权限不同。root 进程默认丢 DBUS_SESSION_BUS_ADDRESS,
+    会导致 D-Bus 调用失败(表现为探测 09 里 sudo 后 XEventMonitor 崩溃)。
+    此处自动探测 /run/user/<uid>/bus 并恢复。
+    """
+    if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        return
+    if not hasattr(os, "geteuid"):  # Windows 无 os.geteuid
+        return
+    if os.geteuid() != 0:
+        return
+    if os.environ.get("XDG_SESSION_TYPE", "").lower() != "wayland":
+        return
+    import glob
+    for bus_path in sorted(glob.glob("/run/user/*/bus")):
+        uid = bus_path.split("/")[2]
+        if uid == "0":
+            continue
+        os.environ["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + bus_path
+        logger.debug("恢复 D-Bus session bus: %s", bus_path)
+        break
+
+
 def main():
+    ensure_deepin_session_bus()
 
     app = QApplication(sys.argv)
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
@@ -46,6 +73,7 @@ def main():
 
 @logger.catch
 def single_run(script_path, run_times):
+    ensure_deepin_session_bus()
     flag = StopFlag(False)
     thread = RunScriptCMDClass(script_path, run_times, flag)
 
