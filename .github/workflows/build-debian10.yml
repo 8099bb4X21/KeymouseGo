@@ -1,0 +1,106 @@
+name: 构建 UOS 20 ARM64 包
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # conda-forge 的 PySide6/Qt/openssl 用 cos7 sysroot 编译，glibc 基线 2.17，
+      # 才能在 UOS(glibc 2.28) 上跑；pip 的 manylinux PySide6 基线 >=2.31，不行。
+      - name: 安装 Miniforge (aarch64)
+        run: |
+          wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh -O /tmp/miniforge.sh
+          bash /tmp/miniforge.sh -b -p /opt/conda
+
+      - name: 创建 conda 环境 (Python 3.10 + PySide6 6.10)
+        run: |
+          /opt/conda/bin/conda create -n build python=3.10 -y
+          # qt6-multimedia 是独立包：pyside6 只含 QtMultimedia 的 Python 绑定，
+          # 底层 libQt6Multimedia.so.6 需单独安装，否则 import 即报 not found。
+          /opt/conda/bin/conda install -n build -c conda-forge "pyside6=6.10" "qt6-multimedia=6.10.*" pyinstaller -y
+
+      - name: 验证 QtMultimedia 与依赖库就绪
+        run: |
+          source /opt/conda/etc/profile.d/conda.sh
+          conda activate build
+          python -c "import PySide6.QtMultimedia, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets; print('PySide6 import OK')"
+          ls -l "$CONDA_PREFIX/lib/libQt6Multimedia.so.6" "$CONDA_PREFIX/lib/libQt6Core.so.6"
+
+      - name: 安装纯 Python 依赖
+        run: |
+          source /opt/conda/etc/profile.d/conda.sh
+          conda activate build
+          sed -i '/PySide6/d' requirements-universal.txt
+          pip install -r requirements-universal.txt
+
+      - name: 打包
+        run: |
+          source /opt/conda/etc/profile.d/conda.sh
+          conda activate build
+          # PyInstaller 通过 _ssl/_hashlib 收集 openssl 时走的是系统搜索路径，
+          # 会误收系统的 libcrypto/libssl(glibc 2.38/2.33)。强制注入 conda 版(glibc 2.17)。
+          export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+          pyinstaller -Fw \
+            --add-binary "$CONDA_PREFIX/lib/libcrypto.so.3:." \
+            --add-binary "$CONDA_PREFIX/lib/libssl.so.3:." \
+            --add-data './assets:assets' \
+            --hidden-import "pynput.keyboard._xorg" \
+            --hidden-import "pynput.mouse._xorg" \
+            --hidden-import "pynput.keyboard._uinput" \
+            --hidden-import "pynput.mouse._uinput" \
+            KeymouseGo.py
+
+      - name: 拆包校验产物 glibc 基线
+        run: |
+          curl -sL https://raw.githubusercontent.com/extremecoders-re/pyinstxtractor/master/pyinstxtractor.py -o /tmp/pyinstxtractor.py
+          mkdir -p /tmp/unpack && cd /tmp/unpack
+          python3 /tmp/pyinstxtractor.py "$GITHUB_WORKSPACE/dist/KeymouseGo" >/dev/null 2>&1
+          python3 - <<'EOF'
+          import re, os
+          base = '/tmp/unpack/KeymouseGo_extracted'
+          def maxver(data, pat):
+              vers = sorted(set(re.findall(pat, data)), key=lambda v: tuple(int(x) for x in v.decode().split('.')[1:]))
+              return vers[-1].decode() if vers else None
+          def glibc_key(v):
+              v = v.replace('GLIBC_', '')
+              return tuple(int(x) for x in v.split('.')) if v else (0, 0)
+          bad = []
+          crypto_info = {}
+          for root, _, files in os.walk(base):
+              for f in files:
+                  if '.so' not in f:
+                      continue
+                  p = os.path.join(root, f)
+                  data = open(p, 'rb').read()
+                  if data[:4] != b'\x7fELF':
+                      continue
+                  g = maxver(data, rb'GLIBC_2\.[0-9.]+')
+                  rel = os.path.relpath(p, base)
+                  if f in ('libcrypto.so.3', 'libssl.so.3'):
+                      crypto_info[f] = f'{g} | size={len(data)} | rel={rel}'
+                  if g and glibc_key(g) > (2, 28):
+                      bad.append((g, rel))
+          print('=== openssl 库基线 ===')
+          for k in ('libcrypto.so.3', 'libssl.so.3'):
+              print(f'{k}: {crypto_info.get(k, "缺失")}')
+          print('=== GLIBC > 2.28 的库 ===')
+          for g, rel in sorted(bad):
+              print(f'{g:12s} {rel}')
+          print('超标库总数:', len(bad))
+          print('RESULT:', 'FAIL 有超标库' if bad else 'OK 全部 <= 2.28')
+          EOF
+          ls -lh "$GITHUB_WORKSPACE/dist/KeymouseGo"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeymouseGo-UOS-ARM64
+          path: dist/KeymouseGo
