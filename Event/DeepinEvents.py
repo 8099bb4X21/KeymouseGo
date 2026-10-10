@@ -19,10 +19,26 @@ import os
 import re
 import struct
 import subprocess
+import sys
 import time
 
 from Event.Event import Event
 from loguru import logger
+
+
+def _clean_env():
+    """调系统工具(gdbus)用的净化环境。PyInstaller 包的 LD_LIBRARY_PATH 会拐走
+    系统二进制的库依赖，此处剥离 bundle 目录让其走系统库。"""
+    env = dict(os.environ)
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    ld_path = env.get("LD_LIBRARY_PATH", "")
+    if ld_path:
+        parts = [p for p in ld_path.split(":") if p and p != bundle_dir]
+        if parts:
+            env["LD_LIBRARY_PATH"] = ":".join(parts)
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+    return env
 
 # 仅作占位导出(Event/__init__.py 要求 _Event.SW/_Event.SH 存在), 不参与坐标换算
 SW, SH = 1920, 1080
@@ -155,7 +171,8 @@ def _get_cursor_pos():
                XEM_INTERFACE, prop]
         try:
             proc = subprocess.run(cmd, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, timeout=3)
+                                  stderr=subprocess.DEVNULL, timeout=3,
+                                  env=_clean_env())
         except (OSError, subprocess.TimeoutExpired):
             return None
         out = proc.stdout.decode("utf-8", errors="replace").strip()

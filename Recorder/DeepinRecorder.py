@@ -15,6 +15,7 @@ import os
 import re
 import struct
 import subprocess
+import sys
 import threading
 import time
 
@@ -24,6 +25,26 @@ from loguru import logger
 record_signals = globalv.RecordSignal()
 
 XEM_INTERFACE = "com.deepin.api.XEventMonitor"
+
+
+def _clean_env():
+    """调系统工具(dbus-monitor/gdbus)用的净化环境。
+
+    PyInstaller 包运行时把 bundle 目录塞进 LD_LIBRARY_PATH，spawn 出来的系统
+    二进制会被拐去加载包内低版本 .so 而崩溃（实测：系统 dbus-monitor 加载包内
+    libdbus-1.so.3 缺 LIBDBUS_PRIVATE_1.12.20 符号，rc=1 秒退）。此处剥离 bundle
+    目录，让系统工具走系统库。
+    """
+    env = dict(os.environ)
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    ld_path = env.get("LD_LIBRARY_PATH", "")
+    if ld_path:
+        parts = [p for p in ld_path.split(":") if p and p != bundle_dir]
+        if parts:
+            env["LD_LIBRARY_PATH"] = ":".join(parts)
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+    return env
 
 EVENT_FORMAT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -103,7 +124,8 @@ def _mouse_monitor_thread():
     try:
         proc = subprocess.Popen(
             ["dbus-monitor", "--session", rule],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=_clean_env())
     except (OSError, ValueError) as e:
         logger.error("启动 dbus-monitor 监听 XEventMonitor 失败: {}", e)
         return
@@ -234,7 +256,8 @@ def _register_fullscreen():
            "--method", "com.deepin.api.XEventMonitor.RegisterFullScreen"]
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, timeout=10)
+                              stderr=subprocess.PIPE, timeout=10,
+                              env=_clean_env())
     except (OSError, subprocess.TimeoutExpired) as e:
         logger.error("RegisterFullScreen 调用失败: {}", e)
         return None
