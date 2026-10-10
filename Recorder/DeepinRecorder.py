@@ -24,6 +24,17 @@ from loguru import logger
 
 record_signals = globalv.RecordSignal()
 
+# pynput 只覆盖 XWayland 窗口（KeymouseGo 自身、浏览器等多跑 Xcb），与 XEventMonitor
+#（覆盖 Wayland 原生）互补。X 环境不可用时降级为单通道，不致命。
+try:
+    from pynput import mouse as _pynput_mouse
+    _HAS_PYNPUT = True
+    _PYNPUT_ERR = ""
+except Exception as e:
+    _pynput_mouse = None
+    _HAS_PYNPUT = False
+    _PYNPUT_ERR = str(e)
+
 XEM_INTERFACE = "com.deepin.api.XEventMonitor"
 
 
@@ -85,7 +96,27 @@ def _get_delay(action_type):
     return delay
 
 
+# 双通道去重：同一物理动作可能同时触发 XEventMonitor 与 pynput，
+# 60ms 内同类型、坐标差<=2px 的视为重复，直接丢弃后者
+_last_mouse = {"action_type": None, "x": None, "y": None, "ts": 0}
+_DEDUP_MS = 60
+_DEDUP_PX = 2
+_mouse_lock = threading.Lock()
+
+
 def _emit_mouse(action_type, x, y):
+    now = globalv.current_ts()
+    with _mouse_lock:
+        last = _last_mouse
+        if (last["action_type"] == action_type and last["x"] is not None
+                and abs(x - last["x"]) <= _DEDUP_PX
+                and abs(y - last["y"]) <= _DEDUP_PX
+                and (now - last["ts"]) < _DEDUP_MS):
+            return
+        last["action_type"] = action_type
+        last["x"] = x
+        last["y"] = y
+        last["ts"] = now
     delay = _get_delay(action_type)
     if delay < 0:
         return
@@ -270,11 +301,65 @@ def _register_fullscreen():
     return out
 
 
+# ==================== 鼠标监听(pynput/XWayland) ====================
+
+_PYNPUT_BUTTON = {}
+if _HAS_PYNPUT:
+    _PYNPUT_BUTTON = {
+        _pynput_mouse.Button.left: "left",
+        _pynput_mouse.Button.right: "right",
+        _pynput_mouse.Button.middle: "middle",
+    }
+
+
+def _pynput_on_move(x, y):
+    try:
+        _emit_mouse("mouse move", int(x), int(y))
+    except Exception as e:
+        logger.error("pynput move 回调异常: {}", e)
+
+
+def _pynput_on_click(x, y, button, pressed):
+    name = _PYNPUT_BUTTON.get(button)
+    if name is None:
+        return
+    try:
+        _emit_mouse("mouse {} {}".format(name, "down" if pressed else "up"),
+                    int(x), int(y))
+    except Exception as e:
+        logger.error("pynput click 回调异常: {}", e)
+
+
+def _pynput_on_scroll(x, y, dx, dy):
+    try:
+        _emit_mouse("mouse wheel {}".format("down" if dy < 0 else "up"),
+                    int(x), int(y))
+    except Exception as e:
+        logger.error("pynput scroll 回调异常: {}", e)
+
+
+def _start_pynput_mouse():
+    """启动 pynput 鼠标监听（覆盖 XWayland 窗口）。X 不可用则降级，不抛异常。"""
+    if not _HAS_PYNPUT:
+        logger.warning("pynput 不可用({})，仅 XEventMonitor 单通道录制", _PYNPUT_ERR)
+        return
+    try:
+        listener = _pynput_mouse.Listener(
+            on_move=_pynput_on_move,
+            on_click=_pynput_on_click,
+            on_scroll=_pynput_on_scroll)
+        listener.start()
+        logger.info("pynput 鼠标监听已启动（覆盖 XWayland 窗口）")
+    except Exception as e:
+        logger.error("pynput 鼠标监听启动失败: {}，仅 XEventMonitor 单通道录制", e)
+
+
 def setuphook(commandline=False):
     _register_fullscreen()
     mouse_thread = threading.Thread(target=_mouse_monitor_thread, daemon=True)
     mouse_thread.start()
     logger.info("XEventMonitor 鼠标监听已启动")
+    _start_pynput_mouse()
 
     event_dev = _find_keyboard_event()
     if event_dev:
