@@ -104,7 +104,7 @@ def _mouse_monitor_thread():
             ["dbus-monitor", "--session", rule],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except (OSError, ValueError) as e:
-        logger.error("启动 dbus-monitor 监听 XEventMonitor 失败: %s", e)
+        logger.error("启动 dbus-monitor 监听 XEventMonitor 失败: {}", e)
         return
 
     header = None
@@ -123,7 +123,7 @@ def _mouse_monitor_thread():
             elif header is not None:
                 args.append(text.strip())
     except Exception as e:
-        logger.error("XEventMonitor 监听线程异常: %s", e)
+        logger.error("XEventMonitor 监听线程异常: {}", e)
 
 
 def _handle_mouse_block(header, args):
@@ -180,7 +180,7 @@ def _find_keyboard_event():
                 elif line.startswith("H: Handlers="):
                     current["handlers"] = line.split("=", 1)[1].strip()
     except OSError as e:
-        logger.error("读 /proc/bus/input/devices 失败: %s", e)
+        logger.error("读 /proc/bus/input/devices 失败: {}", e)
     return None
 
 
@@ -189,7 +189,7 @@ def _keyboard_monitor_thread(event_dev):
     try:
         fd = os.open(path, os.O_RDONLY)
     except OSError as e:
-        logger.error("打开键盘设备 %s 失败: %s", path, e)
+        logger.error("打开键盘设备 {} 失败: {}", path, e)
         return
     try:
         while True:
@@ -204,7 +204,7 @@ def _keyboard_monitor_thread(event_dev):
             elif value == 0:
                 _emit_key(code, False)
     except OSError as e:
-        logger.error("键盘监听线程异常: %s", e)
+        logger.error("键盘监听线程异常: {}", e)
     finally:
         try:
             os.close(fd)
@@ -223,14 +223,14 @@ def _register_fullscreen():
         proc = subprocess.run(cmd, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as e:
-        logger.error("RegisterFullScreen 调用失败: %s", e)
+        logger.error("RegisterFullScreen 调用失败: {}", e)
         return None
     if proc.returncode != 0:
         err = proc.stderr.decode("utf-8", errors="replace").strip()
-        logger.error("RegisterFullScreen 返回 rc=%s err=%s", proc.returncode, err)
+        logger.error("RegisterFullScreen 返回 rc={} err={}", proc.returncode, err)
         return None
     out = proc.stdout.decode("utf-8", errors="replace").strip()
-    logger.info("RegisterFullScreen 成功, id=%s", out)
+    logger.info("RegisterFullScreen 成功, id={}", out)
     return out
 
 
@@ -245,6 +245,6 @@ def setuphook(commandline=False):
         kb_thread = threading.Thread(
             target=_keyboard_monitor_thread, args=(event_dev,), daemon=True)
         kb_thread.start()
-        logger.info("键盘监听已启动: /dev/input/%s", event_dev)
+        logger.info("键盘监听已启动: /dev/input/{}", event_dev)
     else:
         logger.warning("未识别到键盘设备, 键盘录制不可用")

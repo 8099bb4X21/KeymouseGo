@@ -86,7 +86,7 @@ class _UInputDevice(object):
         try:
             self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         except OSError as e:
-            logger.error("打开 /dev/uinput 失败: %s (需 root 运行)", e)
+            logger.error("打开 /dev/uinput 失败: {} (需 root 运行)", e)
             return False
         try:
             for code in (EV_REL, EV_KEY):
@@ -98,7 +98,7 @@ class _UInputDevice(object):
             self._write_user_dev()
             fcntl.ioctl(self.fd, UI_DEV_CREATE, 0)
         except OSError as e:
-            logger.error("初始化 uinput 设备失败: %s", e)
+            logger.error("初始化 uinput 设备失败: {}", e)
             self._close()
             return False
         logger.info("uinput 虚拟键鼠设备已创建")
@@ -127,7 +127,7 @@ class _UInputDevice(object):
             data = struct.pack("llHHi", 0, 0, etype, code, value)
             os.write(self.fd, data)
         except OSError as e:
-            logger.error("uinput 注入失败: %s", e)
+            logger.error("uinput 注入失败: {}", e)
 
     def _close(self):
         if self.fd is not None:
@@ -232,7 +232,7 @@ class DeepinEvent(Event):
             elif self.action_type == "mouse move":
                 pass
             else:
-                logger.warning("Unknown mouse event: %s", self.action_type)
+                logger.warning("Unknown mouse event: {}", self.action_type)
 
         elif self.event_type == "EK":
             key_code, key_name, extended = self.action
@@ -241,16 +241,16 @@ class DeepinEvent(Event):
             elif self.action_type == "key up":
                 _key(key_code, False)
             else:
-                logger.warning("Unknown keyboard event: %s", self.action_type)
+                logger.warning("Unknown keyboard event: {}", self.action_type)
 
         elif self.event_type == "EX":
             if self.action_type == "input":
                 _type_text(self.action)
             else:
-                logger.warning("Unknown extra event: %s", self.action_type)
+                logger.warning("Unknown extra event: {}", self.action_type)
 
         else:
-            logger.warning("Unknown event_type: %s", self.event_type)
+            logger.warning("Unknown event_type: {}", self.event_type)
 
 
 def _type_text(text):

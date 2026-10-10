@@ -47,7 +47,14 @@ def ensure_deepin_session_bus():
         return
     if os.geteuid() != 0:
         return
-    if os.environ.get("XDG_SESSION_TYPE", "").lower() != "wayland":
+    # 注意：不能依赖 XDG_SESSION_TYPE（plain sudo 下它本身就丢了）；
+    # UOS/Deepin 上只要 root 且缺 session bus 地址就尝试恢复
+    try:
+        with open("/etc/os-release", "r", encoding="utf-8") as f:
+            content = f.read().lower()
+            if "uos" not in content and "deepin" not in content:
+                return
+    except OSError:
         return
     import glob
     for bus_path in sorted(glob.glob("/run/user/*/bus")):
@@ -55,7 +62,7 @@ def ensure_deepin_session_bus():
         if uid == "0":
             continue
         os.environ["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + bus_path
-        logger.debug("恢复 D-Bus session bus: %s", bus_path)
+        logger.debug("恢复 D-Bus session bus: {}", bus_path)
         break
 
 
