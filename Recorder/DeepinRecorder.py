@@ -212,7 +212,30 @@ def _keyboard_monitor_thread(event_dev):
             pass
 
 
+def _register_fullscreen():
+    """向 XEventMonitor 注册全屏监听。必须先注册 daemon 才会广播信号；
+    只被动监听(dbus-monitor)而从不注册，是部分窗口收不到信号的根因。"""
+    cmd = ["gdbus", "call", "--session",
+           "--dest", "com.deepin.api.XEventMonitor",
+           "--object-path", "/com/deepin/api/XEventMonitor",
+           "--method", "com.deepin.api.XEventMonitor.RegisterFullScreen"]
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.error("RegisterFullScreen 调用失败: %s", e)
+        return None
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        logger.error("RegisterFullScreen 返回 rc=%s err=%s", proc.returncode, err)
+        return None
+    out = proc.stdout.decode("utf-8", errors="replace").strip()
+    logger.info("RegisterFullScreen 成功, id=%s", out)
+    return out
+
+
 def setuphook(commandline=False):
+    _register_fullscreen()
     mouse_thread = threading.Thread(target=_mouse_monitor_thread, daemon=True)
     mouse_thread.start()
     logger.info("XEventMonitor 鼠标监听已启动")

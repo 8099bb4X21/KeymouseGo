@@ -6,9 +6,22 @@ def is_deepin_wayland():
     """判断是否为 deepin(统信UOS) 的 Wayland 会话。满足时才启用 DeepinEvents 后端。"""
     if system() != 'Linux':
         return False
-    session_type = os.environ.get('XDG_SESSION_TYPE', '')
-    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '')
-    return session_type.lower() == 'wayland' and 'deepin' in desktop.lower()
+    session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+    desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
+    if session_type == 'wayland' and 'deepin' in desktop:
+        return True
+    # plain sudo 会清空 XDG_* 环境变量导致误判回 pynput；UOS20 默认 Wayland，
+    # 此时用 /etc/os-release 兜底（明确 x11 会话的除外）
+    if session_type == 'x11':
+        return False
+    try:
+        with open('/etc/os-release', 'r', encoding='utf-8') as f:
+            content = f.read().lower()
+            if 'uos' in content or 'deepin' in content:
+                return True
+    except OSError:
+        pass
+    return False
 
 
 if system() == 'Windows':
