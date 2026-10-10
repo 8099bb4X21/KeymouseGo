@@ -354,11 +354,100 @@ def _start_pynput_mouse():
         logger.error("pynput 鼠标监听启动失败: {}，仅 XEventMonitor 单通道录制", e)
 
 
+# ==================== 鼠标监听(KWayland/全局Wayland) ====================
+
+KWAYLAND_INTERFACE = "com.deepin.daemon.KWayland.Output"
+
+# KWayland.ButtonPress 的 button 编码按 Qt 鼠标键假设（KWin 系）：
+# 1=左（与 X11 一致，最稳），2=右，3=右（兼容 X11 假设，该值 Qt 下不会出现）；
+# 272/273/274=左/右/中（兼容 evdev 透传假设）。4/5 歧义（Qt中键 vs X11滚轮），
+# 暂跳过并打 warning，待日志中的 raw 值确认后再补。所有 button 都打 DEBUG raw。
+_KWAYLAND_BUTTON = {
+    1: "left", 2: "right", 3: "right",
+    272: "left", 273: "right", 274: "middle",
+}
+
+_KWAYLAND_MEMBERS = ("CursorMove", "ButtonPress", "ButtonRelease")
+
+
+def _handle_kwayland_block(header, args):
+    m = _MEMBER_RE.search(header)
+    if not m:
+        return
+    member = m.group(1)
+    if member not in _KWAYLAND_MEMBERS:
+        return
+    nums = []
+    for line in args:
+        if line.startswith("uint32 ") or line.startswith("int32 "):
+            try:
+                nums.append(int(line.split()[1]))
+            except (IndexError, ValueError):
+                pass
+    logger.debug("收到 KWayland 信号 {} 原始值 {}", member, nums)
+    if member == "CursorMove" and len(nums) >= 2:
+        _emit_mouse("mouse move", nums[0], nums[1])
+    elif member in ("ButtonPress", "ButtonRelease") and len(nums) >= 3:
+        button = nums[0]
+        x, y = nums[1], nums[2]
+        name = _KWAYLAND_BUTTON.get(button)
+        if name is None:
+            logger.warning("未知的 KWayland button={} x={} y={}，已跳过", button, x, y)
+            return
+        action_type = "mouse {} {}".format(
+            name, "down" if member == "ButtonPress" else "up")
+        _emit_mouse(action_type, x, y)
+
+
+def _kwayland_monitor_thread():
+    rule = "interface='{}'".format(KWAYLAND_INTERFACE)
+    try:
+        proc = subprocess.Popen(
+            ["dbus-monitor", "--session", rule],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=_clean_env())
+    except (OSError, ValueError) as e:
+        logger.error("启动 dbus-monitor 监听 KWayland 失败: {}", e)
+        return
+
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        try:
+            err = proc.stderr.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            err = ""
+        logger.error("dbus-monitor(KWayland) 启动后即退出 rc={} err={}",
+                     proc.returncode, err)
+        return
+    logger.info("dbus-monitor 进程存活，开始监听 KWayland 信号")
+
+    header = None
+    args = []
+    try:
+        for raw in proc.stdout:
+            text = raw.decode("utf-8", errors="replace").rstrip(chr(13) + chr(10))
+            if "member=" in text and KWAYLAND_INTERFACE in text:
+                header = text
+                args = []
+            elif text.strip() == "":
+                if header is not None:
+                    _handle_kwayland_block(header, args)
+                header = None
+                args = []
+            elif header is not None:
+                args.append(text.strip())
+    except Exception as e:
+        logger.error("KWayland 监听线程异常: {}", e)
+
+
 def setuphook(commandline=False):
     _register_fullscreen()
     mouse_thread = threading.Thread(target=_mouse_monitor_thread, daemon=True)
     mouse_thread.start()
     logger.info("XEventMonitor 鼠标监听已启动")
+    kwayland_thread = threading.Thread(target=_kwayland_monitor_thread, daemon=True)
+    kwayland_thread.start()
+    logger.info("KWayland 鼠标监听已启动（覆盖 Wayland 原生窗口）")
     _start_pynput_mouse()
 
     event_dev = _find_keyboard_event()
